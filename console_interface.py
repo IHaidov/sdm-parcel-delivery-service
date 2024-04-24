@@ -1,3 +1,8 @@
+import datetime
+
+from Common.models import Parcel
+
+
 class ConsoleInterface:
     def __init__(self, parcel_service, locker_service, event_service, payment_service):
         self.parcel_service = parcel_service
@@ -29,7 +34,7 @@ class ConsoleInterface:
         recipient_id = input("Enter recipient ID: ")
         size = input("Enter size (S, M, L): ")
         # Assume parcel ID is auto-generated in reality and other details are handled
-        self.parcel_service.register_parcel(Parcel(id=None, sender_id=sender_id, recipient_id=recipient_id, size=size))
+        self.parcel_service.register_parcel(Parcel(id=None, sender_id=sender_id, recipient_id=recipient_id, size=size, registered_time=datetime.date.today(), delivery_time=None, pick_up_time=None))
         print("Parcel registered successfully.")
 
     def view_parcel(self):

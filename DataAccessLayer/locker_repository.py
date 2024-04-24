@@ -1,4 +1,4 @@
-from base_repository import BaseRepository
+from DataAccessLayer.base_repository import BaseRepository
 
 class LockerRepository(BaseRepository):
     def add_locker(self, locker):
