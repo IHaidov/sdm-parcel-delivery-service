@@ -34,6 +34,22 @@ class Parcel:
     def update_payment_status(self, status: str):
         self.payment_status = status
 
+    def get_details(self):
+        details = {
+            "Parcel ID": self.identifier,
+            "Sender": self.sender.name,
+            "Recipient": self.recipient.name,
+            "Size": self.size,
+            "Services": ", ".join([k for k, v in self.services.items() if v]),
+            "Payment Status": self.payment_status
+        }
+        return details
+
+    def get_transit_history(self):
+        return [{"Timestamp": event.timestamp.strftime("%Y-%m-%d %H:%M:%S"), "Location": event.location,
+                 "Event": event.type} for event in self.transit_history]
+
+
 class Payment:
     base_prices = {'S': 5, 'M': 8, 'L': 10}  # example base prices for sizes
 
@@ -155,9 +171,11 @@ class UserInterface:
             print("2. Deposit a Parcel")
             print("3. Collect a Parcel")
             print("4. Track a Parcel")
-            print("5. Courier Actions")
-            print("6. View Lockers")
-            print("7. Exit")
+            print("5. View Parcel Information")
+            print("6. View Parcel Transit History")
+            print("7. Courier Actions")
+            print("8. View Lockers")
+            print("9. Exit")
             choice = input("Enter your choice: ")
 
             if choice == '1':
@@ -169,10 +187,14 @@ class UserInterface:
             elif choice == '4':
                 self.track_parcel_ui()
             elif choice == '5':
-                self.courier_menu()
+                self.view_parcel_info_ui()
             elif choice == '6':
-                self.view_lockers_ui()
+                self.view_parcel_history_ui()
             elif choice == '7':
+                self.courier_menu()
+            elif choice == '8':
+                self.view_lockers_ui()
+            elif choice == '9':
                 print("Exiting system.")
                 sys.exit(0)
             else:
@@ -194,6 +216,33 @@ class UserInterface:
                 break
             else:
                 print("Invalid choice. Please enter 1, 2, or 3.")
+
+    def view_parcel_info_ui(self):
+        parcel_id = input("Enter the parcel ID to view details: ")
+        for locker in self.locker_system:
+            for slot in locker.slots:
+                if slot.is_occupied and slot.current_parcel.identifier == parcel_id:
+                    info = slot.current_parcel.get_details()
+                    for key, value in info.items():
+                        print(f"{key}: {value}")
+                    return
+        print("Parcel not found.")
+
+    def view_parcel_history_ui(self):
+        parcel_id = input("Enter the parcel ID to view history: ")
+        for locker in self.locker_system:
+            for slot in locker.slots:
+                if slot.is_occupied and slot.current_parcel.identifier == parcel_id:
+                    history = slot.current_parcel.get_transit_history()
+                    if history:
+                        for event in history:
+                            print(
+                                f"Timestamp: {event['Timestamp']}, Location: {event['Location']}, Event: {event['Event']}")
+                        return
+                    else:
+                        print("No history available for this parcel.")
+                        return
+        print("Parcel not found.")
 
     def transfer_parcel_ui(self):
         from_locker_id = input("Enter from locker ID: ")
@@ -230,7 +279,7 @@ class UserInterface:
             print(f"Parcel {parcel.identifier} has been successfully deposited in locker {locker.identifier}.")
         else:
             print("Failed to deposit parcel; no available slots.")
-            
+
     def view_lockers_ui(self):
         for locker in self.locker_system:
             print(f"Locker ID: {locker.identifier}, Address: {locker.address}")
