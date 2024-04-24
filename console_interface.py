@@ -41,6 +41,9 @@ class ConsoleInterface:
         parcel_id = input("Enter parcel ID to view: ")
         parcel = self.parcel_service.get_parcel_info(parcel_id)
         if parcel:
-            print(f"Parcel ID: {parcel.id}, Size: {parcel.size}, Status: {parcel.status}")
+            parcel_id, sender_id, recipient_id, registered_time, delivery_time, pick_up_time, size = parcel
+            print(f"Parcel ID: {parcel_id}, Size: {size}")
+
+            # print(f"Parcel ID: {parcel.id}, Size: {parcel.size}, Status: {parcel.status}")
         else:
             print("Parcel not found.")
