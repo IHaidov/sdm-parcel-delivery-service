@@ -1,5 +1,6 @@
 import sys
-from datetime import datetime
+from collections import deque
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 class User:
@@ -23,6 +24,10 @@ class Parcel:
         self.services = services or {}
         self.transit_history = []
         self.payment_status = 'Pending'
+        self.estimated_delivery_time = None
+        self.actual_delivery_time = None
+        self.guaranteed_delivery_time = None
+        self.actual_pick_up_time = None
 
     def generate_id(self):
         import uuid
@@ -45,13 +50,41 @@ class Parcel:
         }
         return details
 
+    def calculate_delivery_times(self, base_days: int):
+        self.estimated_delivery_time = datetime.now() + timedelta(days=base_days)
+        self.guaranteed_delivery_time = self.estimated_delivery_time + timedelta(days=2)  # 2 days buffer
+
+    def record_delivery(self):
+        self.actual_delivery_time = datetime.now()
+        event = Event(self.actual_delivery_time, "Destination Locker", "Parcel Delivered")
+        self.add_event(event)
+
+    def record_pick_up(self):
+        self.actual_pick_up_time = datetime.now()
+        event = Event(self.actual_pick_up_time, "Destination Locker", "Parcel Picked Up")
+        self.add_event(event)
+
+    def display_parcel_times(self):
+        times = {
+            "Estimated Delivery Time": self.estimated_delivery_time.strftime(
+                "%Y-%m-%d %H:%M:%S") if self.estimated_delivery_time else "Not Set",
+            "Actual Delivery Time": self.actual_delivery_time.strftime(
+                "%Y-%m-%d %H:%M:%S") if self.actual_delivery_time else "Not Delivered",
+            "Guaranteed Delivery Time": self.guaranteed_delivery_time.strftime(
+                "%Y-%m-%d %H:%M:%S") if self.guaranteed_delivery_time else "Not Set",
+            "Actual Pick Up Time": self.actual_pick_up_time.strftime(
+                "%Y-%m-%d %H:%M:%S") if self.actual_pick_up_time else "Not Picked Up"
+        }
+        for key, value in times.items():
+            print(f"{key}: {value}")
+
     def get_transit_history(self):
         return [{"Timestamp": event.timestamp.strftime("%Y-%m-%d %H:%M:%S"), "Location": event.location,
                  "Event": event.type} for event in self.transit_history]
 
 
 class Payment:
-    base_prices = {'S': 5, 'M': 8, 'L': 10}  # example base prices for sizes
+    base_prices = {'S': 5, 'M': 8, 'L': 10}
 
     def __init__(self, parcel):
         self.parcel = parcel
@@ -71,9 +104,9 @@ class Payment:
     def process_payment(self):
         total = self.calculate_total()
         print(f"Total payment due for parcel {self.parcel.identifier}: ${total}")
-        # Here you would typically interface with a payment gateway
         self.parcel.update_payment_status('Paid')
         print(f"Payment processed for parcel {self.parcel.identifier}.")
+        self.parcel.calculate_delivery_times(base_days=3 if 'priority' in self.parcel.services and self.parcel.services['priority'] else 5)
 
 class Slot:
     def __init__(self, size: str):
@@ -87,7 +120,10 @@ class Slot:
         self.add_event(Event(datetime.now(), f"Slot sized {self.size}", "Occupied"))
 
     def vacate(self):
-        self.add_event(Event(datetime.now(), f"Slot sized {self.size}", "Vacated"))
+        if self.current_parcel:
+            self.current_parcel.record_pick_up()  # Record the pick-up time
+        event = Event(datetime.now(), f"Slot sized {self.size}", "Vacated")
+        self.current_parcel.add_event(event)
         self.current_parcel = None
         self.is_occupied = False
 
@@ -100,6 +136,8 @@ class Locker:
         self.identifier = identifier
         self.address = address
         self.slots = []
+        self.parcel_history = deque(maxlen=7)  # Store last 7 days of parcel activity
+        self.expected_parcels = []
 
     def add_slot(self, slot: Slot):
         self.slots.append(slot)
@@ -113,6 +151,8 @@ class Locker:
                 slot.occupy(parcel)
                 event = Event(datetime.now(), self.address, "Parcel Deposited")
                 parcel.add_event(event)
+                parcel.record_delivery()
+                self.parcel_history.append((parcel.identifier, datetime.now(), "Deposited"))
                 return True
         print("No available slot for this parcel.")
         return False
@@ -124,14 +164,44 @@ class Locker:
                 parcel = slot.current_parcel
                 slot.vacate()
                 event = Event(datetime.now(), self.address, "Parcel Dispatched")
+                self.parcel_history.append((parcel_id, datetime.now(), "Dispatched"))
+
                 return parcel
         return None
+
+    def add_expected_parcel(self, parcel: Parcel):
+        self.expected_parcels.append(parcel)
+
+    def remove_expected_parcel(self, parcel_id: str):
+        self.expected_parcels = [p for p in self.expected_parcels if p.identifier != parcel_id]
+
+    def check_availability(self, date_time: datetime):
+        # Assuming a simple check that counts slots and expected parcels for a specific future date
+        occupied = sum(1 for slot in self.slots if slot.is_occupied)
+        expected = len(self.expected_parcels)
+        total_slots = len(self.slots)
+        available_slots = total_slots - occupied - expected
+        print(f"On {date_time.strftime('%Y-%m-%d')}, available slots: {available_slots}")
+
 
     def list_lockers(self, locker_system):
         print("\nAvailable Lockers:")
         for locker in locker_system:
             print(
                 f"Locker ID: {locker.identifier}, Address: {locker.address}, Available Slots: {len([slot for slot in locker.slots if not slot.is_occupied])}")
+
+    def update_details(self, new_identifier: str, new_address: str):
+        if self.can_update_details():
+            self.identifier = new_identifier
+            self.address = new_address
+            print(f"Locker details updated to ID {self.identifier}, Address {self.address}")
+        else:
+            print("Cannot update details. Locker is not empty or has incoming parcels.")
+
+    def can_update_details(self):
+        if any(slot.is_occupied for slot in self.slots) or self.expected_parcels:
+            return False
+        return True
 
 
 class Courier:
@@ -172,10 +242,9 @@ class UserInterface:
             print("3. Collect a Parcel")
             print("4. Track a Parcel")
             print("5. View Parcel Information")
-            print("6. View Parcel Transit History")
-            print("7. Courier Actions")
-            print("8. View Lockers")
-            print("9. Exit")
+            print("6. Courier Actions")
+            print("7. Locker Actions")
+            print("8. Exit")
             choice = input("Enter your choice: ")
 
             if choice == '1':
@@ -189,16 +258,35 @@ class UserInterface:
             elif choice == '5':
                 self.view_parcel_info_ui()
             elif choice == '6':
-                self.view_parcel_history_ui()
-            elif choice == '7':
                 self.courier_menu()
+            elif choice == '7':
+                self.locker_management_menu()
             elif choice == '8':
-                self.view_lockers_ui()
-            elif choice == '9':
                 print("Exiting system.")
                 sys.exit(0)
             else:
                 print("Invalid choice. Please enter a number between 1 and 6.")
+
+    def locker_management_menu(self):
+        while True:
+            print("\nLocker Management Menu")
+            print("1. Update Locker Details")
+            print("2. View All Lockers")
+            print("3. Check Locker Availability")
+            print("4. Return to Main Menu")
+            choice = input("Enter your choice: ")
+
+            if choice == '1':
+                self.update_locker_ui()
+            elif choice == '2':
+                self.view_lockers_ui()
+            elif choice == '3':
+                self.check_locker_availability_ui()
+            elif choice == '4':
+                break
+            else:
+                print("Invalid choice. Please enter a number between 1 and 4.")
+
 
     def courier_menu(self):
         while True:
@@ -217,6 +305,28 @@ class UserInterface:
             else:
                 print("Invalid choice. Please enter 1, 2, or 3.")
 
+    def update_locker_ui(self):
+        print("Update Locker Details")
+        locker_id = input("Enter locker ID: ")
+        new_id = input("Enter new locker ID: ")
+        new_address = input("Enter new locker address: ")
+        locker = next((l for l in self.locker_system if l.identifier == locker_id), None)
+        if locker:
+            locker.update_details(new_id, new_address)
+        else:
+            print("Locker not found.")
+
+    def check_locker_availability_ui(self):
+        locker_id = input("Enter locker ID: ")
+        date_str = input("Enter date (YYYY-MM-DD): ")
+        date_time = datetime.strptime(date_str, "%Y-%m-%d")
+        locker = next((l for l in self.locker_system if l.identifier == locker_id), None)
+        if locker:
+            locker.check_availability(date_time)
+        else:
+            print("Locker not found.")
+
+
     def view_parcel_info_ui(self):
         parcel_id = input("Enter the parcel ID to view details: ")
         for locker in self.locker_system:
@@ -225,6 +335,7 @@ class UserInterface:
                     info = slot.current_parcel.get_details()
                     for key, value in info.items():
                         print(f"{key}: {value}")
+                    slot.current_parcel.display_parcel_times()
                     return
         print("Parcel not found.")
 
@@ -305,7 +416,6 @@ class UserInterface:
         print("Parcel not found or no available slot.")
 
     def collect_parcel_ui(self):
-        # UI logic for collecting a parcel
         parcel_id = input("Enter the parcel ID to collect: ")
         found = False
         for locker in self.locker_system:
@@ -318,7 +428,6 @@ class UserInterface:
             print("Parcel not found.")
 
     def track_parcel_ui(self):
-        # UI logic for tracking a parcel
         parcel_id = input("Enter the parcel ID to track: ")
         found = False
         for locker in self.locker_system:
