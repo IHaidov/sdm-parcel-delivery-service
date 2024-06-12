@@ -478,7 +478,9 @@ class UserInterface:
             print("1. Update Locker Details")
             print("2. View All Lockers")
             print("3. Check Locker Availability")
-            print("4. Return to Main Menu")
+            print("4. Create New Storage")
+            print("5. Return to Main Menu")
+
             choice = input("Enter your choice: ")
 
             if choice == '1':
@@ -488,6 +490,8 @@ class UserInterface:
             elif choice == '3':
                 self.check_locker_availability_ui()
             elif choice == '4':
+                self.create_new_storage_ui()
+            elif choice == '5':
                 break
             else:
                 print("Invalid choice. Please enter a number between 1 and 4.")
@@ -519,6 +523,47 @@ class UserInterface:
             locker.update_details(new_id, new_address)
         else:
             print("Locker not found.")
+
+    def create_new_storage_ui(self):
+        print("\nCreate New Storage")
+        storage_type = input("Enter storage type (locker/internal/external): ").lower()
+
+        if storage_type == 'locker':
+            self.create_locker_ui()
+        elif storage_type == 'internal':
+            self.create_internal_storage_ui()
+        elif storage_type == 'external':
+            self.create_external_storage_ui()
+        else:
+            print("Invalid storage type. Please enter locker, internal, or external.")
+
+    def create_locker_ui(self):
+        identifier = input("Enter locker ID: ")
+        address = input("Enter locker address: ")
+        locker = Locker(identifier, address)
+
+        num_slots = int(input("Enter number of slots: "))
+        for _ in range(num_slots):
+            slot_size = input("Enter slot size (L, M, S): ")
+            locker.add_slot(Slot(slot_size))
+
+        self.locker_system.add(locker)
+        self.courier.mediator.register_locker(locker)
+        print(f"Locker {identifier} created successfully.")
+
+    def create_internal_storage_ui(self):
+        name = input("Enter internal storage name: ")
+        storage = StorageFacility(name)
+        self.courier.intermediate_store = storage
+        self.courier.mediator.register_storage(storage)
+        print(f"Internal storage {name} created successfully.")
+
+    def create_external_storage_ui(self):
+        name = input("Enter external storage name: ")
+        storage = StorageFacility(name)
+        self.courier.external_storage = storage
+        self.courier.mediator.register_storage(storage)
+        print(f"External storage {name} created successfully.")
 
     def check_locker_availability_ui(self):
         locker_id = input("Enter locker ID: ")
