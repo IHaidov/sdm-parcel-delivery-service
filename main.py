@@ -1,12 +1,74 @@
-'''V1.5.2 temporary code disappears after transfer fix'''
 import sys
 from datetime import datetime, timedelta
 from typing import List, Optional
+from abc import ABC, abstractmethod
 import uuid
 import random
 import string
 
 
+# Strategy Pattern
+class TariffStrategy(ABC):
+    @abstractmethod
+    def calculate_fee(self, base_price: float) -> float:
+        pass
+
+class RegularTariff(TariffStrategy):
+    def calculate_fee(self, base_price: float) -> float:
+        return base_price
+
+class PriorityTariff(TariffStrategy):
+    def calculate_fee(self, base_price: float) -> float:
+        return base_price * 1.2
+
+class ExtendedStorageTariff(TariffStrategy):
+    def calculate_fee(self, base_price: float) -> float:
+        return base_price + 5
+
+
+# Visitor Pattern
+class Visitor(ABC):
+    @abstractmethod
+    def visit(self, element):
+        pass
+
+class ParcelReportVisitor(Visitor):
+    def visit(self, parcel: 'Parcel'):
+        print(f"Parcel ID: {parcel.identifier}, Status: {parcel.payment_status}")
+
+class LockerReportVisitor(Visitor):
+    def visit(self, locker: 'Locker'):
+        print(f"Locker ID: {locker.identifier}, Address: {locker.address}")
+        for slot in locker.slots:
+            status = "occupied" if slot.is_occupied else "free"
+            print(f"  Slot Size: {slot.size}, Status: {status}")
+
+
+# Command Pattern
+class Command(ABC):
+    @abstractmethod
+    def execute(self):
+        pass
+
+class RegisterParcelCommand(Command):
+    def __init__(self, parcel: 'Parcel'):
+        self.parcel = parcel
+
+    def execute(self):
+        print(f"Registering parcel {self.parcel.identifier}")
+        # Registration logic here
+
+class PayParcelCommand(Command):
+    def __init__(self, parcel: 'Parcel', payment: 'Payment'):
+        self.parcel = parcel
+        self.payment = payment
+
+    def execute(self):
+        print(f"Processing payment for parcel {self.parcel.identifier}")
+        self.payment.process_payment()
+
+
+# Event Class
 class Event:
     def __init__(self, timestamp: datetime, location: str, event_type: str):
         self.timestamp = timestamp
@@ -14,6 +76,7 @@ class Event:
         self.type = event_type
 
 
+# User Class
 class User:
     def __init__(self, name: str, contact_info: str, address: str, phone_number: str):
         self.name = name
@@ -22,6 +85,7 @@ class User:
         self.phone_number = phone_number
 
 
+# Parcel Class
 class Parcel:
     def __init__(self, sender: User, recipient: User, size: str, sender_locker: str, delivery_locker: str, services: Optional[dict] = None):
         self.sender = sender
@@ -99,23 +163,21 @@ class Parcel:
     def get_transit_history(self):
         return [{"Timestamp": event.timestamp.strftime("%Y-%m-%d %H:%M:%S"), "Location": event.location, "Event": event.type} for event in self.transit_history]
 
+    def accept(self, visitor: Visitor):
+        visitor.visit(self)
 
+
+# Payment Class
 class Payment:
     base_prices = {'S': 5, 'M': 8, 'L': 10}
 
-    def __init__(self, parcel: Parcel):
+    def __init__(self, parcel: Parcel, tariff_strategy: TariffStrategy):
         self.parcel = parcel
+        self.tariff_strategy = tariff_strategy
 
     def calculate_total(self):
         total = self.base_prices.get(self.parcel.size, 0)
-        for service, active in self.parcel.services.items():
-            if active:
-                if service == 'insurance':
-                    total += 2
-                elif service == 'priority':
-                    total += 5
-                elif service == 'extended_storage':
-                    total += 1
+        total = self.tariff_strategy.calculate_fee(total)
         return total
 
     def process_payment(self):
@@ -127,6 +189,7 @@ class Payment:
         self.parcel.calculate_delivery_times(base_days=3 if self.parcel.services.get('priority') else 5)
 
 
+# Slot Class
 class Slot:
     def __init__(self, size: str):
         self.size = size
@@ -151,7 +214,29 @@ class Slot:
             self.current_parcel.add_event(event)
 
 
-class Locker:
+# Composite Pattern
+class LockerComponent(ABC):
+    @abstractmethod
+    def operation(self):
+        pass
+
+class LockerComposite(LockerComponent):
+    def __init__(self):
+        self.children = []
+
+    def add(self, component: LockerComponent):
+        self.children.append(component)
+
+    def remove(self, component: LockerComponent):
+        self.children.remove(component)
+
+    def operation(self):
+        for child in self.children:
+            child.operation()
+
+
+# Locker Class
+class Locker(LockerComponent):
     def __init__(self, identifier: str, address: str):
         self.identifier = identifier
         self.address = address
@@ -213,7 +298,17 @@ class Locker:
             return False
         return True
 
+    def operation(self):
+        print(f"Locker {self.identifier} at {self.address}")
+        for slot in self.slots:
+            status = "occupied" if slot.is_occupied else "free"
+            print(f"  Slot Size: {slot.size}, Status: {status}")
 
+    def accept(self, visitor: Visitor):
+        visitor.visit(self)
+
+
+# Storage Facility Class
 class StorageFacility:
     def __init__(self, name):
         self.name = name
@@ -241,16 +336,47 @@ class StorageFacility:
             print(f"{self.name} is currently empty.")
 
 
+# Mediator Pattern
+class LockerMediator:
+    def __init__(self):
+        self.lockers = []
+        self.storage_facilities = []
+
+    def register_locker(self, locker: Locker):
+        self.lockers.append(locker)
+
+    def register_storage(self, storage: StorageFacility):
+        self.storage_facilities.append(storage)
+
+    def transfer_to_storage(self, parcel_id: str, storage_name: str):
+        for storage in self.storage_facilities:
+            if storage.name == storage_name:
+                parcel = self.find_parcel(parcel_id)
+                if parcel:
+                    storage.store_parcel(parcel)
+                    print(f"Parcel {parcel_id} transferred to {storage_name}.")
+
+    def find_parcel(self, parcel_id: str) -> Optional[Parcel]:
+        for locker in self.lockers:
+            parcel = locker.dispatch_parcel(parcel_id)
+            if parcel:
+                return parcel
+        return None
+
+
+# Courier Class
 class Courier:
-    def __init__(self, name, intermediate_store: StorageFacility, external_storage: StorageFacility):
+    def __init__(self, name, intermediate_store: StorageFacility, external_storage: StorageFacility, mediator: LockerMediator):
         self.name = name
         self.intermediate_store = intermediate_store
         self.external_storage = external_storage
+        self.mediator = mediator
 
     def transfer_parcel_to_intermediate(self, from_locker: Locker, parcel_id: str):
         parcel = from_locker.dispatch_parcel(parcel_id)
         if parcel:
             self.intermediate_store.store_parcel(parcel)
+            self.notify_user(parcel, f"Parcel {parcel_id} transferred to intermediate storage.")
         else:
             print("Failed to transfer parcel to intermediate store.")
 
@@ -260,20 +386,34 @@ class Courier:
             if not to_locker.receive_parcel(parcel):
                 print("Failed to deposit parcel in locker from intermediate store.")
                 self.intermediate_store.store_parcel(parcel)
+            else:
+                self.notify_user(parcel, f"Parcel {parcel_id} transferred from intermediate storage to locker {to_locker.identifier}.")
 
     def move_to_external_storage(self, parcel_id: str):
         parcel = self.intermediate_store.retrieve_parcel(parcel_id)
         if parcel:
             self.external_storage.store_parcel(parcel)
+            self.notify_user(parcel, f"Parcel {parcel_id} moved to external storage.")
 
-    def transfer_parcel(self, from_locker: Locker, to_locker: Locker, parcel_id: str):
-        parcel = from_locker.dispatch_parcel(parcel_id)
+    def transfer_parcel(self, from_location, to_location, parcel_id: str):
+        if isinstance(from_location, Locker):
+            parcel = from_location.dispatch_parcel(parcel_id)
+        else:
+            parcel = from_location.retrieve_parcel(parcel_id)
+
         if parcel:
-            if not to_locker.receive_parcel(parcel):
-                print("Failed to deposit parcel. No available slot in destination locker.")
-                from_locker.receive_parcel(parcel)
+            if isinstance(to_location, Locker):
+                if not to_location.receive_parcel(parcel):
+                    print("Failed to deposit parcel. No available slot in destination locker.")
+                    if isinstance(from_location, Locker):
+                        from_location.receive_parcel(parcel)
+                    else:
+                        from_location.store_parcel(parcel)
+                else:
+                    self.notify_user(parcel, f"Parcel {parcel_id} transferred from {from_location.__class__.__name__} to locker {to_location.identifier}.")
             else:
-                print(f"Parcel {parcel_id} transferred from {from_locker.address} to {to_locker.address}")
+                to_location.store_parcel(parcel)
+                self.notify_user(parcel, f"Parcel {parcel_id} transferred from {from_location.__class__.__name__} to storage {to_location.name}.")
         else:
             print("Parcel not found or already collected.")
 
@@ -286,9 +426,13 @@ class Courier:
                 current_parcel = slot.current_parcel.identifier if slot.is_occupied else "None"
                 print(f"  Slot Size: {slot.size}, Status: {slot_status}, Parcel ID: {current_parcel}")
 
+    def notify_user(self, parcel: Parcel, message: str):
+        print(f"Notification to {parcel.recipient.name}: {message}")
 
+
+# User Interface Class
 class UserInterface:
-    def __init__(self, locker_system: List[Locker], courier: Courier):
+    def __init__(self, locker_system: LockerComposite, courier: Courier):
         self.locker_system = locker_system
         self.courier = courier
 
@@ -359,7 +503,7 @@ class UserInterface:
             if choice == '1':
                 self.transfer_parcel_ui()
             elif choice == '2':
-                self.courier.show_locker_details(self.locker_system)
+                self.courier.show_locker_details(self.locker_system.children)
             elif choice == '3':
                 break
             else:
@@ -370,7 +514,7 @@ class UserInterface:
         locker_id = input("Enter locker ID: ")
         new_id = input("Enter new locker ID: ")
         new_address = input("Enter new locker address: ")
-        locker = next((l for l in self.locker_system if l.identifier == locker_id), None)
+        locker = next((l for l in self.locker_system.children if l.identifier == locker_id), None)
         if locker:
             locker.update_details(new_id, new_address)
         else:
@@ -380,7 +524,7 @@ class UserInterface:
         locker_id = input("Enter locker ID: ")
         date_str = input("Enter date (YYYY-MM-DD): ")
         date_time = datetime.strptime(date_str, "%Y-%m-%d")
-        locker = next((l for l in self.locker_system if l.identifier == locker_id), None)
+        locker = next((l for l in self.locker_system.children if l.identifier == locker_id), None)
         if locker:
             locker.check_availability(date_time)
         else:
@@ -404,7 +548,7 @@ class UserInterface:
 
     def view_parcel_history_ui(self):
         parcel_id = input("Enter the parcel ID to view history: ")
-        for locker in self.locker_system:
+        for locker in self.locker_system.children:
             for slot in locker.slots:
                 if slot.is_occupied and slot.current_parcel.identifier == parcel_id:
                     history = slot.current_parcel.get_transit_history()
@@ -418,15 +562,28 @@ class UserInterface:
         print("Parcel not found.")
 
     def transfer_parcel_ui(self):
-        from_locker_id = input("Enter from locker ID: ")
-        to_locker_id = input("Enter to locker ID: ")
+        from_location_type = input("Enter from location type (locker/internal_storage/external_storage): ")
+        to_location_type = input("Enter to location type (locker/internal_storage/external_storage): ")
+        from_location_id = input("Enter from location ID: ")
+        to_location_id = input("Enter to location ID: ")
         parcel_id = input("Enter parcel ID to transfer: ")
-        from_locker = next((locker for locker in self.locker_system if locker.identifier == from_locker_id), None)
-        to_locker = next((locker for locker in self.locker_system if locker.identifier == to_locker_id), None)
-        if from_locker and to_locker:
-            self.courier.transfer_parcel(from_locker, to_locker, parcel_id)
+
+        from_location = self.get_location(from_location_type, from_location_id)
+        to_location = self.get_location(to_location_type, to_location_id)
+
+        if from_location and to_location:
+            self.courier.transfer_parcel(from_location, to_location, parcel_id)
         else:
-            print("Invalid locker ID(s) provided.")
+            print("Invalid location ID(s) provided.")
+
+    def get_location(self, location_type: str, location_id: str):
+        if location_type == "locker":
+            return next((locker for locker in self.locker_system.children if locker.identifier == location_id), None)
+        elif location_type == "internal_storage" and location_id == "intermediate":
+            return self.courier.intermediate_store
+        elif location_type == "external_storage" and location_id == "external":
+            return self.courier.external_storage
+        return None
 
     def register_parcel(self):
         self.view_lockers_ui()
@@ -437,8 +594,8 @@ class UserInterface:
         size = input("Enter parcel size (L, M, S): ")
         sender_locker = input("Enter sender locker ID: ")
         delivery_locker = input("Enter delivery locker ID: ")
-        sender_locker_obj = next((l for l in self.locker_system if l.identifier == sender_locker), None)
-        delivery_locker_obj = next((l for l in self.locker_system if l.identifier == delivery_locker), None)
+        sender_locker_obj = next((l for l in self.locker_system.children if l.identifier == sender_locker), None)
+        delivery_locker_obj = next((l for l in self.locker_system.children if l.identifier == delivery_locker), None)
         if not sender_locker_obj:
             print("Invalid sender locker ID.")
             return
@@ -472,18 +629,16 @@ class UserInterface:
             if parcel.payment_status == 'Paid':
                 print("Payment already completed for this parcel.")
                 return
-            payment = Payment(parcel)
-            payment.process_payment()
+            payment = Payment(parcel, RegularTariff())
+            pay_command = PayParcelCommand(parcel, payment)
+            pay_command.execute()
             self.notify_user(parcel, "Payment completed successfully.")
         else:
             print("Parcel not found or already paid.")
 
     def view_lockers_ui(self):
-        for locker in self.locker_system:
-            print(f"Locker ID: {locker.identifier}, Address: {locker.address}")
-            for slot in locker.slots:
-                status = "occupied" if slot.is_occupied else "free"
-                print(f"    Slot Size: {slot.size}, Status: {status}")
+        for locker in self.locker_system.children:
+            locker.operation()
 
     def deposit_parcel_ui(self):
         parcel_id = input("Enter the parcel ID or temporary code to deposit: ")
@@ -498,7 +653,7 @@ class UserInterface:
             print("Parcel not found or sender's phone number does not match.")
 
     def try_to_deposit_parcel(self, parcel: Parcel):
-        sender_locker = next((l for l in self.locker_system if l.identifier == parcel.sender_locker), None)
+        sender_locker = next((l for l in self.locker_system.children if l.identifier == parcel.sender_locker), None)
         if sender_locker and sender_locker.receive_parcel(parcel):
             print(f"Parcel {parcel.identifier} has been successfully deposited in locker {sender_locker.identifier}.")
             self.notify_user(parcel, "Parcel deposited successfully.")
@@ -511,7 +666,7 @@ class UserInterface:
         parcel = self.find_parcel_by_id(parcel_id)
         if parcel and parcel.recipient.phone_number == recipient_phone:
             found = False
-            for locker in self.locker_system:
+            for locker in self.locker_system.children:
                 dispatched_parcel = locker.dispatch_parcel(parcel_id)
                 if dispatched_parcel:
                     parcel = dispatched_parcel
@@ -536,11 +691,11 @@ class UserInterface:
             print("Parcel not found.")
 
     def find_parcel_by_id(self, parcel_id: str) -> Optional[Parcel]:
-        for locker in self.locker_system:
+        for locker in self.locker_system.children:
             for slot in locker.slots:
                 if slot.is_occupied and (slot.current_parcel.identifier == parcel_id or slot.current_parcel.temp_code == parcel_id):
                     return slot.current_parcel
-        for locker in self.locker_system:
+        for locker in self.locker_system.children:
             for parcel in locker.expected_parcels:
                 if parcel.identifier == parcel_id or parcel.temp_code == parcel_id:
                     return parcel
@@ -553,10 +708,13 @@ class UserInterface:
 # Setup for demonstration
 intermediate_store = StorageFacility("Intermediate Store")
 external_storage = StorageFacility("External Storage")
-courier = Courier("John Doe", intermediate_store, external_storage)
+mediator = LockerMediator()
+courier = Courier("John Doe", intermediate_store, external_storage, mediator)
 
 locker1 = Locker("123", "123 Street, City A")
 locker2 = Locker("456", "456 Road, City B")
+mediator.register_locker(locker1)
+mediator.register_locker(locker2)
 
 # Adding slots to lockers
 locker1.add_slot(Slot("L"))
@@ -568,7 +726,9 @@ locker2.add_slot(Slot("S"))
 locker2.add_slot(Slot("M"))
 locker2.add_slot(Slot("L"))
 
-locker_system = [locker1, locker2]
+locker_system = LockerComposite()
+locker_system.add(locker1)
+locker_system.add(locker2)
 
 ui = UserInterface(locker_system, courier)
 ui.main_menu()
