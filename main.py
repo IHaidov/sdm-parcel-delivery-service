@@ -35,6 +35,7 @@ class Visitor(ABC):
 class ParcelReportVisitor(Visitor):
     def visit(self, parcel: 'Parcel'):
         print(f"Parcel ID: {parcel.identifier}, Status: {parcel.payment_status}")
+        print(f"Sender: {parcel.sender.name}, Recipient: {parcel.recipient.name}")
 
 class LockerReportVisitor(Visitor):
     def visit(self, locker: 'Locker'):
@@ -42,6 +43,16 @@ class LockerReportVisitor(Visitor):
         for slot in locker.slots:
             status = "occupied" if slot.is_occupied else "free"
             print(f"  Slot Size: {slot.size}, Status: {status}")
+
+class StorageReportVisitor(Visitor):
+    def visit(self, storage: 'StorageFacility'):
+        print(f"Storage Name: {storage.name}")
+        if storage.storage:
+            print(f"Storage Contents:")
+            for parcel_id in storage.storage:
+                print(f"- Parcel ID: {parcel_id}")
+        else:
+            print("Storage is currently empty.")
 
 
 # Command Pattern
@@ -66,6 +77,22 @@ class PayParcelCommand(Command):
     def execute(self):
         print(f"Processing payment for parcel {self.parcel.identifier}")
         self.payment.process_payment()
+
+class DepositParcelCommand(Command):
+    def __init__(self, locker: 'Locker', parcel: 'Parcel'):
+        self.locker = locker
+        self.parcel = parcel
+
+    def execute(self):
+        self.locker.receive_parcel(self.parcel)
+
+class CollectParcelCommand(Command):
+    def __init__(self, locker: 'Locker', parcel_id: str):
+        self.locker = locker
+        self.parcel_id = parcel_id
+
+    def execute(self):
+        self.locker.dispatch_parcel(self.parcel_id)
 
 
 # Event Class
@@ -335,6 +362,9 @@ class StorageFacility:
         else:
             print(f"{self.name} is currently empty.")
 
+    def accept(self, visitor: Visitor):
+        visitor.visit(self)
+
 
 # Mediator Pattern
 class LockerMediator:
@@ -362,6 +392,10 @@ class LockerMediator:
             if parcel:
                 return parcel
         return None
+
+    def accept(self, visitor: Visitor):
+        for storage in self.storage_facilities:
+            storage.accept(visitor)
 
 
 # Courier Class
@@ -479,7 +513,8 @@ class UserInterface:
             print("2. View All Lockers")
             print("3. Check Locker Availability")
             print("4. Create New Storage")
-            print("5. Return to Main Menu")
+            print("5. View All Storages")
+            print("6. Return to Main Menu")
 
             choice = input("Enter your choice: ")
 
@@ -492,9 +527,11 @@ class UserInterface:
             elif choice == '4':
                 self.create_new_storage_ui()
             elif choice == '5':
+                self.view_all_storages_ui()
+            elif choice == '6':
                 break
             else:
-                print("Invalid choice. Please enter a number between 1 and 4.")
+                print("Invalid choice. Please enter a number between 1 and 5.")
 
     def courier_menu(self):
         while True:
@@ -606,6 +643,9 @@ class UserInterface:
                         return
         print("Parcel not found.")
 
+    def view_all_storages_ui(self):
+        self.courier.mediator.accept(StorageReportVisitor())
+
     def transfer_parcel_ui(self):
         from_location_type = input("Enter from location type (locker/internal_storage/external_storage): ")
         to_location_type = input("Enter to location type (locker/internal_storage/external_storage): ")
@@ -624,9 +664,9 @@ class UserInterface:
     def get_location(self, location_type: str, location_id: str):
         if location_type == "locker":
             return next((locker for locker in self.locker_system.children if locker.identifier == location_id), None)
-        elif location_type == "internal_storage" and location_id == "intermediate":
+        elif location_type == "internal_storage":
             return self.courier.intermediate_store
-        elif location_type == "external_storage" and location_id == "external":
+        elif location_type == "external_storage":
             return self.courier.external_storage
         return None
 
@@ -760,6 +800,8 @@ locker1 = Locker("123", "123 Street, City A")
 locker2 = Locker("456", "456 Road, City B")
 mediator.register_locker(locker1)
 mediator.register_locker(locker2)
+mediator.register_storage(intermediate_store)
+mediator.register_storage(external_storage)
 
 # Adding slots to lockers
 locker1.add_slot(Slot("L"))
