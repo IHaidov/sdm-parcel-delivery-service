@@ -1,3 +1,4 @@
+# Event Class
 from datetime import datetime
 
 
@@ -6,3 +7,4 @@ class Event:
         self.timestamp = timestamp
         self.location = location
         self.type = event_type
+

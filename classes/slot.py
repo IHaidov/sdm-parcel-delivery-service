@@ -1,6 +1,8 @@
+from datetime import datetime
+
+# Slot Class
 from classes.event import Event
 from classes.parcel import Parcel
-from datetime import datetime
 
 
 class Slot:
@@ -16,7 +18,7 @@ class Slot:
 
     def vacate(self):
         if self.current_parcel:
-            self.current_parcel.record_pick_up()  # Record the pick-up time
+            self.current_parcel.record_pick_up()
         event = Event(datetime.now(), f"Slot sized {self.size}", "Vacated")
         self.current_parcel.add_event(event)
         self.current_parcel = None
@@ -25,3 +27,4 @@ class Slot:
     def add_event(self, event: Event):
         if self.current_parcel:
             self.current_parcel.add_event(event)
+
